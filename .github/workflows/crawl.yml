@@ -34,6 +34,17 @@ jobs:
       - name: Install Playwright browsers
         run: python -m playwright install --with-deps chromium
 
+      - name: Capture pre-crawl row counts
+        id: pre
+        run: |
+          artists=$(sqlite3 spotify_playwright_crawler.db "SELECT COUNT(*) FROM artists" 2>/dev/null || echo 0)
+          queue=$(sqlite3 spotify_playwright_crawler.db "SELECT COUNT(*) FROM artist_queue" 2>/dev/null || echo 0)
+          completed=$(sqlite3 spotify_playwright_crawler.db "SELECT COUNT(*) FROM artist_queue WHERE status IN ('done','failed')" 2>/dev/null || echo 0)
+          echo "artists=$artists" >> "$GITHUB_OUTPUT"
+          echo "queue=$queue" >> "$GITHUB_OUTPUT"
+          echo "completed=$completed" >> "$GITHUB_OUTPUT"
+          echo "Pre-crawl: artists=$artists, queue=$queue, completed=$completed"
+
       - name: Run crawl
         run: python -u script.py
         env:
@@ -44,10 +55,24 @@ jobs:
         run: |
           git config user.name "spotify-crawler-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          artists_after=$(sqlite3 spotify_playwright_crawler.db "SELECT COUNT(*) FROM artists" 2>/dev/null || echo 0)
+          queue_after=$(sqlite3 spotify_playwright_crawler.db "SELECT COUNT(*) FROM artist_queue" 2>/dev/null || echo 0)
+          completed_after=$(sqlite3 spotify_playwright_crawler.db "SELECT COUNT(*) FROM artist_queue WHERE status IN ('done','failed')" 2>/dev/null || echo 0)
+          artists_before="${{ steps.pre.outputs.artists }}"
+          queue_before="${{ steps.pre.outputs.queue }}"
+          completed_before="${{ steps.pre.outputs.completed }}"
+          echo "Post-crawl: artists=$artists_after (was $artists_before), queue=$queue_after (was $queue_before), completed=$completed_after (was $completed_before)"
+
+          if [ "$artists_after" = "$artists_before" ] && [ "$queue_after" = "$queue_before" ] && [ "$completed_after" = "$completed_before" ]; then
+            echo "No row count or completion changes. Skipping commit."
+            exit 0
+          fi
+
           git add spotify_playwright_crawler.db
           if git diff --cached --quiet; then
             echo "No DB changes to commit."
           else
-            git commit -m "crawl: update db ($(date -u +'%Y-%m-%dT%H:%MZ'))"
+            git commit -m "crawl: update db ($(date -u +'%Y-%m-%dT%H:%MZ'), artists=$artists_after, queue=$queue_after, completed=$completed_after)"
             git push
           fi

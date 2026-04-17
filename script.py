@@ -41,6 +41,7 @@ MAX_ARTISTS_TO_PROCESS = 250
 SCRAPE_DELAY_MIN = 5
 SCRAPE_DELAY_MAX = 15
 DB_PATH = "spotify_playwright_crawler.db"
+MAX_MONTHLY_LISTENERS = 10_000
 SPOTIFY_BASE = "https://open.spotify.com"
 # -------------------------------------------------
 
@@ -172,6 +173,22 @@ def mark_queue_failed(artist_id: str) -> None:
 def save_artist_data(
     artist_id: str, name: str, url: str, monthly_listeners: Optional[int]
 ) -> None:
+    if monthly_listeners is None or monthly_listeners > MAX_MONTHLY_LISTENERS:
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute("DELETE FROM artists WHERE id = ?", (artist_id,))
+        purged = cur.rowcount
+        conn.commit()
+        conn.close()
+        reason = (
+            "unknown listener count"
+            if monthly_listeners is None
+            else f"{monthly_listeners} > {MAX_MONTHLY_LISTENERS}"
+        )
+        action = "purged existing row" if purged else "skipped"
+        print(f"   🚫 {action} for {name} ({reason})")
+        return
+
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute(

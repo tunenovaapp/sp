@@ -201,7 +201,7 @@ function readData() {
   };
   const toRows = ({ columns, values }) => values.map(v => Object.fromEntries(columns.map((c, i) => [c, v[i]])));
 
-  state.artists = toRows(q("SELECT id, name, source_url, monthly_listeners, last_updated, first_seen FROM artists"));
+  state.artists = toRows(q("SELECT id, name, source_url, monthly_listeners, last_updated, first_seen FROM artists WHERE monthly_listeners <= 10000"));
   state.queue   = toRows(q("SELECT id, name, url, status, added_at FROM artist_queue"));
   state.edges   = toRows(q(`
     SELECT e.from_artist_id, af.name AS from_name,
