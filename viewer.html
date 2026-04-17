@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Spotify Crawler Viewer</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #161a22;
+    --panel-2: #1c212c;
+    --border: #272e3b;
+    --text: #e7ecf3;
+    --muted: #8a94a6;
+    --accent: #1db954;
+    --accent-2: #15a345;
+    --row-alt: #131722;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  header { padding: 24px 32px; border-bottom: 1px solid var(--border); background: var(--panel); }
+  header h1 { margin: 0 0 4px; font-size: 20px; letter-spacing: 0.2px; }
+  header .sub { color: var(--muted); font-size: 13px; }
+
+  .stats { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 14px; }
+  .stat { background: var(--panel-2); padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border); min-width: 120px; }
+  .stat .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+  .stat .value { font-size: 18px; font-weight: 600; margin-top: 2px; }
+
+  .controls { padding: 16px 32px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+    border-bottom: 1px solid var(--border); background: var(--panel); position: sticky; top: 0; z-index: 10; }
+  .controls input[type="search"] { background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 12px; min-width: 260px; outline: none; }
+  .controls input[type="search"]:focus { border-color: var(--accent); }
+  .controls button, .file-label { background: var(--accent); color: #062b14; border: none; padding: 8px 14px;
+    border-radius: 8px; font-weight: 600; cursor: pointer; }
+  .controls button:hover, .file-label:hover { background: var(--accent-2); }
+  .controls input[type="file"] { display: none; }
+  .hint { color: var(--muted); font-size: 12px; }
+
+  main { padding: 0 32px 48px; }
+  .message { padding: 24px; color: var(--muted); }
+  .message.error { color: #ff6b6b; }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 13px; }
+  thead th { position: sticky; top: 64px; background: var(--panel); text-align: left; padding: 10px 12px;
+    border-bottom: 1px solid var(--border); color: var(--muted); font-weight: 600; cursor: pointer;
+    user-select: none; white-space: nowrap; }
+  thead th.sorted-asc::after { content: " \25B2"; color: var(--accent); }
+  thead th.sorted-desc::after { content: " \25BC"; color: var(--accent); }
+  tbody tr:nth-child(even) { background: var(--row-alt); }
+  tbody tr:hover { background: #1e2533; }
+  tbody td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--muted); font-size: 12px; }
+  td .bar { display: block; height: 4px; background: #223; border-radius: 2px; margin-top: 4px; overflow: hidden; }
+  td .bar > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), #4ad17a); }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .name-cell { display: flex; align-items: center; gap: 10px; }
+  .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--panel-2); color: var(--muted);
+    display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px;
+    border: 1px solid var(--border); text-transform: uppercase; }
+
+  .tabs { display: flex; gap: 4px; margin-top: 20px; border-bottom: 1px solid var(--border); }
+  .tab { padding: 8px 14px; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; font-weight: 500; }
+  .tab.active { color: var(--text); border-bottom-color: var(--accent); }
+  .pane { display: none; }
+  .pane.active { display: block; }
+
+  .queue-pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px;
+    font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+  .queue-pill.pending { background: #2a2e1b; color: #d3c24a; }
+  .queue-pill.processing { background: #1b2a30; color: #4ad1d1; }
+  .queue-pill.done { background: #17301f; color: #4ad17a; }
+  .queue-pill.failed { background: #2a1b1b; color: #ff6b6b; }
+
+  .edge-pill { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+  .edge-pill.page_link { background: #1b2538; color: #6aa8ff; }
+  .edge-pill.related_artist { background: #17301f; color: #4ad17a; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Spotify Crawler</h1>
+  <div class="sub">Artists discovered from the Playwright crawl.</div>
+  <div class="stats" id="stats"></div>
+</header>
+
+<section class="controls">
+  <input type="search" id="search" placeholder="Search artists by name or ID...">
+  <span class="hint" id="hint">Loading spotify_playwright_crawler.db...</span>
+  <label class="file-label" for="dbfile" id="filelabel" style="display:none">Open .db file</label>
+  <input type="file" id="dbfile" accept=".db,.sqlite,.sqlite3">
+</section>
+
+<main>
+  <div class="tabs">
+    <div class="tab active" data-tab="artists">Artists</div>
+    <div class="tab" data-tab="queue">Queue</div>
+    <div class="tab" data-tab="edges">Edges</div>
+  </div>
+
+  <div id="artists-pane" class="pane active">
+    <div id="artists-message" class="message">Load a database to see artists.</div>
+    <table id="artists-table" style="display:none">
+      <thead>
+        <tr>
+          <th data-col="name">Name</th>
+          <th data-col="monthly_listeners" class="num">Monthly listeners</th>
+          <th data-col="id">Spotify ID</th>
+          <th data-col="last_updated">Last updated</th>
+          <th data-col="first_seen">First seen</th>
+          <th>Open</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div id="queue-pane" class="pane">
+    <div id="queue-message" class="message">Load a database to see the queue.</div>
+    <table id="queue-table" style="display:none">
+      <thead>
+        <tr>
+          <th data-col="name">Name</th>
+          <th data-col="status">Status</th>
+          <th data-col="id">Spotify ID</th>
+          <th data-col="added_at">Added</th>
+          <th>Open</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div id="edges-pane" class="pane">
+    <div id="edges-message" class="message">Load a database to see edges.</div>
+    <table id="edges-table" style="display:none">
+      <thead>
+        <tr>
+          <th data-col="from_name">From</th>
+          <th data-col="to_name">To</th>
+          <th data-col="edge_type">Type</th>
+          <th data-col="first_seen">First seen</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.11.0/sql-wasm.js"></script>
+<script>
+const SQL_WASM = "https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.11.0/";
+const DEFAULT_DB = "spotify_playwright_crawler.db";
+
+const state = {
+  db: null,
+  artists: [],
+  queue: [],
+  edges: [],
+  sort: { artists: { col: "monthly_listeners", dir: "desc" },
+          queue:   { col: "added_at",         dir: "desc" },
+          edges:   { col: "first_seen",       dir: "desc" } },
+  search: "",
+  tab: "artists",
+};
+
+function fmt(n) {
+  if (n === null || n === undefined || n === "") return "—";
+  if (typeof n === "number") return n.toLocaleString();
+  return String(n);
+}
+
+function fmtDate(s) {
+  if (!s) return "—";
+  const d = new Date(s.replace(" ", "T"));
+  if (isNaN(d.getTime())) return s;
+  return d.toLocaleString();
+}
+
+function initials(name) {
+  if (!name) return "?";
+  const parts = name.trim().split(/\s+/).slice(0, 2);
+  return parts.map(p => p[0]).join("") || name[0];
+}
+
+async function loadFromArrayBuffer(buf) {
+  const SQL = await initSqlJs({ locateFile: f => SQL_WASM + f });
+  state.db = new SQL.Database(new Uint8Array(buf));
+  readData();
+  render();
+}
+
+function readData() {
+  const q = sql => {
+    try { const r = state.db.exec(sql); return r.length ? r[0] : { columns: [], values: [] }; }
+    catch (e) { console.warn(sql, e); return { columns: [], values: [] }; }
+  };
+  const toRows = ({ columns, values }) => values.map(v => Object.fromEntries(columns.map((c, i) => [c, v[i]])));
+
+  state.artists = toRows(q("SELECT id, name, source_url, monthly_listeners, last_updated, first_seen FROM artists"));
+  state.queue   = toRows(q("SELECT id, name, url, status, added_at FROM artist_queue"));
+  state.edges   = toRows(q(`
+    SELECT e.from_artist_id, af.name AS from_name,
+           e.to_artist_id,   at.name AS to_name,
+           e.edge_type, e.first_seen
+    FROM artist_edges e
+    LEFT JOIN artists af ON af.id = e.from_artist_id
+    LEFT JOIN artists at ON at.id = e.to_artist_id
+  `));
+}
+
+function renderStats() {
+  const total = state.artists.length;
+  const queued = state.queue.filter(r => r.status === "pending" || r.status === "processing").length;
+  const done = state.queue.filter(r => r.status === "done").length;
+  const failed = state.queue.filter(r => r.status === "failed").length;
+  const edges = state.edges.length;
+  const maxListeners = state.artists.reduce((m, a) => Math.max(m, a.monthly_listeners || 0), 0);
+  const stats = [
+    ["Artists scraped", total],
+    ["Queued", queued],
+    ["Completed", done],
+    ["Failed", failed],
+    ["Edges", edges],
+    ["Top monthly listeners", maxListeners],
+  ];
+  document.getElementById("stats").innerHTML = stats.map(([l, v]) =>
+    `<div class="stat"><div class="label">${l}</div><div class="value">${fmt(v)}</div></div>`).join("");
+}
+
+function sortRows(rows, key) {
+  const { col, dir } = state.sort[key];
+  const mult = dir === "asc" ? 1 : -1;
+  return rows.slice().sort((a, b) => {
+    const av = a[col], bv = b[col];
+    if (av === null || av === undefined) return 1;
+    if (bv === null || bv === undefined) return -1;
+    if (typeof av === "number" && typeof bv === "number") return (av - bv) * mult;
+    return String(av).localeCompare(String(bv), undefined, { numeric: true }) * mult;
+  });
+}
+
+function filterRows(rows, fields) {
+  const s = state.search.trim().toLowerCase();
+  if (!s) return rows;
+  return rows.filter(r => fields.some(f => String(r[f] ?? "").toLowerCase().includes(s)));
+}
+
+function renderArtists() {
+  const msg = document.getElementById("artists-message");
+  const table = document.getElementById("artists-table");
+  if (!state.artists.length) { msg.style.display = "block"; table.style.display = "none"; return; }
+  msg.style.display = "none"; table.style.display = "table";
+  const max = state.artists.reduce((m, a) => Math.max(m, a.monthly_listeners || 0), 0) || 1;
+  const rows = sortRows(filterRows(state.artists, ["id", "name"]), "artists");
+  const body = rows.map(a => {
+    const pct = a.monthly_listeners ? Math.max(2, (a.monthly_listeners / max) * 100) : 0;
+    return `
+      <tr>
+        <td><div class="name-cell"><span class="avatar">${initials(a.name)}</span><span>${escapeHtml(a.name || "—")}</span></div></td>
+        <td class="num">${fmt(a.monthly_listeners)}<span class="bar"><span style="width:${pct}%"></span></span></td>
+        <td class="mono">${a.id}</td>
+        <td>${fmtDate(a.last_updated)}</td>
+        <td>${fmtDate(a.first_seen)}</td>
+        <td><a href="${a.source_url}" target="_blank" rel="noopener">Spotify ↗</a></td>
+      </tr>`;
+  }).join("");
+  document.querySelector("#artists-table tbody").innerHTML = body;
+  setSortIndicators("#artists-table", state.sort.artists);
+}
+
+function renderQueue() {
+  const msg = document.getElementById("queue-message");
+  const table = document.getElementById("queue-table");
+  if (!state.queue.length) { msg.style.display = "block"; table.style.display = "none"; return; }
+  msg.style.display = "none"; table.style.display = "table";
+  const rows = sortRows(filterRows(state.queue, ["id", "name"]), "queue");
+  document.querySelector("#queue-table tbody").innerHTML = rows.map(r => `
+    <tr>
+      <td><div class="name-cell"><span class="avatar">${initials(r.name)}</span><span>${escapeHtml(r.name || "—")}</span></div></td>
+      <td><span class="queue-pill ${r.status}">${r.status}</span></td>
+      <td class="mono">${r.id}</td>
+      <td>${fmtDate(r.added_at)}</td>
+      <td><a href="${r.url}" target="_blank" rel="noopener">Spotify ↗</a></td>
+    </tr>`).join("");
+  setSortIndicators("#queue-table", state.sort.queue);
+}
+
+function renderEdges() {
+  const msg = document.getElementById("edges-message");
+  const table = document.getElementById("edges-table");
+  if (!state.edges.length) { msg.style.display = "block"; table.style.display = "none"; return; }
+  msg.style.display = "none"; table.style.display = "table";
+  const rows = sortRows(filterRows(state.edges, ["from_name", "to_name", "from_artist_id", "to_artist_id"]), "edges");
+  const capped = rows.slice(0, 2000);
+  document.querySelector("#edges-table tbody").innerHTML = capped.map(r => `
+    <tr>
+      <td>${escapeHtml(r.from_name || r.from_artist_id)}</td>
+      <td>${escapeHtml(r.to_name || r.to_artist_id)}</td>
+      <td><span class="edge-pill ${r.edge_type}">${r.edge_type}</span></td>
+      <td>${fmtDate(r.first_seen)}</td>
+    </tr>`).join("");
+  if (rows.length > capped.length) {
+    const note = document.createElement("div");
+    note.className = "message";
+    note.textContent = `Showing first ${capped.length} of ${rows.length} edges.`;
+    table.after(note);
+  }
+  setSortIndicators("#edges-table", state.sort.edges);
+}
+
+function setSortIndicators(sel, s) {
+  document.querySelectorAll(`${sel} thead th`).forEach(th => {
+    th.classList.remove("sorted-asc", "sorted-desc");
+    if (th.dataset.col === s.col) th.classList.add(s.dir === "asc" ? "sorted-asc" : "sorted-desc");
+  });
+}
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function render() {
+  renderStats();
+  renderArtists();
+  renderQueue();
+  renderEdges();
+}
+
+function bindSortHandlers(tableSel, key) {
+  document.querySelectorAll(`${tableSel} thead th[data-col]`).forEach(th => {
+    th.addEventListener("click", () => {
+      const col = th.dataset.col;
+      const s = state.sort[key];
+      s.dir = s.col === col && s.dir === "desc" ? "asc" : (s.col === col ? "desc" : "desc");
+      s.col = col;
+      render();
+    });
+  });
+}
+
+document.getElementById("dbfile").addEventListener("change", async e => {
+  const file = e.target.files[0]; if (!file) return;
+  document.getElementById("hint").textContent = `Loaded: ${file.name}`;
+  loadFromArrayBuffer(await file.arrayBuffer()).catch(err => showError(err));
+});
+
+async function autoLoad() {
+  try {
+    const res = await fetch(DEFAULT_DB + "?t=" + Date.now());
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const buf = await res.arrayBuffer();
+    document.getElementById("hint").textContent =
+      `Loaded ${DEFAULT_DB} (${(buf.byteLength / 1024).toFixed(1)} KB) — refresh to reload`;
+    await loadFromArrayBuffer(buf);
+  } catch (err) {
+    document.getElementById("filelabel").style.display = "inline-block";
+    document.getElementById("hint").innerHTML =
+      `Couldn't auto-load <code>${DEFAULT_DB}</code>. Open with <code>python view.py</code> (starts a local server) or click "Open .db file".`;
+  }
+}
+
+document.getElementById("search").addEventListener("input", e => { state.search = e.target.value; render(); });
+
+document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => {
+  document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
+  document.querySelectorAll(".pane").forEach(x => x.classList.remove("active"));
+  t.classList.add("active");
+  document.getElementById(t.dataset.tab + "-pane").classList.add("active");
+  state.tab = t.dataset.tab;
+}));
+
+function showError(msg) {
+  document.getElementById("artists-message").textContent = msg;
+  document.getElementById("artists-message").classList.add("error");
+  document.getElementById("artists-message").style.display = "block";
+}
+
+bindSortHandlers("#artists-table", "artists");
+bindSortHandlers("#queue-table", "queue");
+bindSortHandlers("#edges-table", "edges");
+
+autoLoad();
+
+setInterval(autoLoad, 10000);
+</script>
+</body>
+</html>
