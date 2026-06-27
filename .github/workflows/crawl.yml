@@ -1,9 +1,5 @@
 name: Crawl Spotify
 
-on:
-  schedule:
-    - cron: '15 */6 * * *'
-  workflow_dispatch:
 
 concurrency:
   group: crawl
